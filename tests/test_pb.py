@@ -16,11 +16,13 @@ class TestPB(unittest.TestCase):
         {"device": {"type": "gaid", "id": "e7e1a50c0ec2747ca56cd9e1558c0d7d"}, "apps": [1]},
     ]
 
-    def tearDown(self):
-        os.remove(TEST_FILE)
+    # def tearDown(self):
+    #     os.remove(TEST_FILE)
 
     def test_write(self):
+        print("TEST?")
         bytes_written = pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
+        print(bytes_written)
         self.assertTrue(bytes_written > 0)
         # check magic, type, etc.
 
