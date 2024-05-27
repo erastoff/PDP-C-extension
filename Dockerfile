@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-dev \
     python3-setuptools \
+    python3-pip \
     gdb \
     && apt-get clean
 
@@ -19,10 +20,3 @@ WORKDIR /tmp/otus/
 
 CMD ["./start.sh"]
 CMD ["bash"]
-
-
-WORKDIR /tmp/otus/
-
-CMD ["./start.sh"]
-CMD ["bash"]
-
