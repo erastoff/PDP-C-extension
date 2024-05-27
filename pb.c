@@ -90,6 +90,7 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
     unsigned int total_bytes_written = 0;
 
+    // Iterate over Python dictionaries
     PyObject *item;
     while ((item = PyIter_Next(iterator)) != NULL) {
         DeviceApps msg = DEVICE_APPS__INIT;
@@ -103,27 +104,53 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         // Get serialized message length
 
         // example
-        PyObject *py_id = PyDict_GetItemString(item, "id");
-        PyObject *py_name = PyDict_GetItemString(item, "name");
-
-        if (py_id && PyLong_Check(py_id)) {
-            device.has_id = 1;
-            device.id.data = (uint8_t*)PyLong_AsUnsignedLong(py_id);
-            device.id.len = sizeof(uint32_t);
+        // PyObject *py_id = PyDict_GetItemString(item, "id");
+        // PyObject *py_name = PyDict_GetItemString(item, "name");
+        PyObject *device_dict = PyDict_GetItemString(item, "device");
+        if (device_dict) {
+            PyObject *device_type = PyDict_GetItemString(device_dict, "type");
+            PyObject *device_id = PyDict_GetItemString(device_dict, "id");
+            if (device_type && PyBytes_Check(device_type)) {
+                device.has_type = 1;
+                device.type.data = (uint8_t*)PyBytes_AS_STRING(device_type);
+                device.type.len = PyBytes_GET_SIZE(device_type);
+            }
+            if (device_id && PyBytes_Check(device_id)) {
+                device.has_id = 1;
+                device.id.data = (uint8_t*)PyBytes_AS_STRING(device_id);
+                device.id.len = PyBytes_GET_SIZE(device_id);
+            }
+            msg.device = &device;
         }
 
-        if (py_name && PyUnicode_Check(py_name)) {
-            const char *name = PyUnicode_AsUTF8(py_name);
-            device.has_type = 1;
-            device.type.data = (uint8_t*)name;
-            device.type.len = strlen(name);
+        PyObject *lat = PyDict_GetItemString(item, "lat");
+        if (lat && PyFloat_Check(lat)) {
+            msg.has_lat = 1;
+            msg.lat = PyFloat_AS_DOUBLE(lat);
         }
 
-        msg.device = &device;
+        PyObject *lon = PyDict_GetItemString(item, "lon");
+        if (lon && PyFloat_Check(lon)) {
+            msg.has_lon = 1;
+            msg.lon = PyFloat_AS_DOUBLE(lon);
+        }
+
+        PyObject *apps = PyDict_GetItemString(item, "apps");
+        if (apps && PyList_Check(apps)) {
+            msg.n_apps = PyList_Size(apps);
+            msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
+            for (unsigned int i = 0; i < msg.n_apps; i++) {
+                PyObject *app = PyList_GetItem(apps, i);
+                if (PyLong_Check(app)) {
+                    msg.apps[i] = (uint32_t)PyLong_AsUnsignedLong(app);
+                }
+            }
+        }
 
         unsigned len = device_apps__get_packed_size(&msg);
-        header.type = DEVICE_APPS_TYPE;
         header.length = len;
+
+        fprintf(stderr, "Writing header: magic=%u, type=%u, length=%u\n", header.magic, header.type, header.length);
 
         if (gzwrite(gzfile, &header, sizeof(pbheader_t)) != sizeof(pbheader_t)) {
             gzclose(gzfile);
@@ -143,7 +170,6 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         }
 
         device_apps__pack(&msg, buf);
-
         if (gzwrite(gzfile, buf, len) != len) {
             free(buf);
             gzclose(gzfile);
@@ -154,7 +180,9 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         }
 
         total_bytes_written += sizeof(pbheader_t) + len;
+
         free(buf);
+        free(msg.apps);
         Py_DECREF(item);
     }
 
