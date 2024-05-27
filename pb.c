@@ -90,12 +90,10 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
     unsigned int total_bytes_written = 0;
 
-    // Iterate over Python dictionaries
     PyObject *item;
     while ((item = PyIter_Next(iterator)) != NULL) {
         DeviceApps msg = DEVICE_APPS__INIT;
         DeviceApps__Device device = DEVICE_APPS__DEVICE__INIT;
-
         // Extract data from Python dictionary
         // Example: PyObject_GetAttrString(item, "key");
 
@@ -103,16 +101,38 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         // Example: msg.attribute = data;
 
         // Get serialized message length
-        unsigned len = device_apps__get_packed_size(&msg);
 
-        // Create header
+        // example
+        PyObject *py_id = PyDict_GetItemString(item, "id");
+        PyObject *py_name = PyDict_GetItemString(item, "name");
+
+        if (py_id && PyLong_Check(py_id)) {
+            device.has_id = 1;
+            device.id.data = (uint8_t*)PyLong_AsUnsignedLong(py_id);
+            device.id.len = sizeof(uint32_t);
+        }
+
+        if (py_name && PyUnicode_Check(py_name)) {
+            const char *name = PyUnicode_AsUTF8(py_name);
+            device.has_type = 1;
+            device.type.data = (uint8_t*)name;
+            device.type.len = strlen(name);
+        }
+
+        msg.device = &device;
+
+        unsigned len = device_apps__get_packed_size(&msg);
         header.type = DEVICE_APPS_TYPE;
         header.length = len;
 
-        // Write header to file
-        fwrite(&header, sizeof(pbheader_t), 1, gzfile);
+        if (gzwrite(gzfile, &header, sizeof(pbheader_t)) != sizeof(pbheader_t)) {
+            gzclose(gzfile);
+            fclose(file);
+            Py_DECREF(item);
+            PyErr_SetString(PyExc_IOError, "Failed to write header to file");
+            return NULL;
+        }
 
-        // Allocate buffer for serialized message
         void *buf = malloc(len);
         if (!buf) {
             gzclose(gzfile);
@@ -122,33 +142,26 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
             return NULL;
         }
 
-        // Pack message into buffer
         device_apps__pack(&msg, buf);
 
-        // Write serialized message to file
         if (gzwrite(gzfile, buf, len) != len) {
             free(buf);
             gzclose(gzfile);
             fclose(file);
             Py_DECREF(item);
-            PyErr_SetString(PyExc_IOError, "Failed to write to file");
+            PyErr_SetString(PyExc_IOError, "Failed to write message to file");
             return NULL;
         }
 
-        // Update total bytes written
         total_bytes_written += sizeof(pbheader_t) + len;
-
-        // Clean up
         free(buf);
         Py_DECREF(item);
     }
 
-    // Clean up
     Py_DECREF(iterator);
     gzclose(gzfile);
     fclose(file);
 
-    // Return total bytes written as Python integer
     return PyLong_FromUnsignedLong(total_bytes_written);
 }
 
