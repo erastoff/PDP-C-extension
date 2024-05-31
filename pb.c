@@ -148,6 +148,8 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         }
 
         unsigned len = device_apps__get_packed_size(&msg);
+        header.magic = MAGIC;
+        header.type = DEVICE_APPS_TYPE;
         header.length = len;
 
         fprintf(stderr, "Writing header: magic=%u, type=%u, length=%u\n", header.magic, header.type, header.length);
@@ -162,6 +164,7 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
         void *buf = malloc(len);
         if (!buf) {
+            free(msg.apps);
             gzclose(gzfile);
             fclose(file);
             Py_DECREF(item);
@@ -172,6 +175,7 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         device_apps__pack(&msg, buf);
         if (gzwrite(gzfile, buf, len) != len) {
             free(buf);
+            free(msg.apps);
             gzclose(gzfile);
             fclose(file);
             Py_DECREF(item);
@@ -216,11 +220,22 @@ static PyObject* py_deviceapps_xread_pb(PyObject* self, PyObject* args) {
         return NULL;
     }
 
+    PyObject *result_list = PyList_New(0);
+    if (!result_list) {
+        gzclose(gzfile);
+        fclose(file);
+        PyErr_SetString(PyExc_MemoryError, "Failed to create result list");
+        return NULL;
+    }
+
     // Define buffer and header
     pbheader_t header;
     void *buf;
 
     while (gzread(gzfile, &header, sizeof(pbheader_t)) > 0) {
+        // Print the magic value for debugging purposes
+//        fprintf(stderr, "Read header: magic=%u, type=%u, length=%u\n", header.magic, header.type, header.length);
+
         if (header.magic != MAGIC) {
             gzclose(gzfile);
             fclose(file);
@@ -261,25 +276,52 @@ static PyObject* py_deviceapps_xread_pb(PyObject* self, PyObject* args) {
             return NULL;
         }
 
-        // Create Python dictionary from message
-        // Example: PyObject *dict = PyDict_New();
+        PyObject *dict = PyDict_New();
+        if (!dict) {
+            device_apps__free_unpacked(msg, NULL);
+            free(buf);
+            gzclose(gzfile);
+            fclose(file);
+            PyErr_SetString(PyExc_MemoryError, "Failed to create Python dictionary");
+            return NULL;
+        }
 
-        // Add message attributes to dictionary
-        // Example: PyDict_SetItemString(dict, "key", Py_BuildValue("value"));
+        if (msg->has_lat) {
+            PyDict_SetItemString(dict, "lat", PyFloat_FromDouble(msg->lat));
+        }
 
-        // Return dictionary as Python object
-        // Example: return dict;
+        if (msg->has_lon) {
+            PyDict_SetItemString(dict, "lon", PyFloat_FromDouble(msg->lon));
+        }
 
-        // Clean up
+        if (msg->device) {
+            PyObject *device_dict = PyDict_New();
+            if (msg->device->has_type) {
+                PyDict_SetItemString(device_dict, "type", PyBytes_FromStringAndSize((char*)msg->device->type.data, msg->device->type.len));
+            }
+            if (msg->device->has_id) {
+                PyDict_SetItemString(device_dict, "id", PyBytes_FromStringAndSize((char*)msg->device->id.data, msg->device->id.len));
+            }
+            PyDict_SetItemString(dict, "device", device_dict);
+        }
+
+        if (msg->n_apps > 0) {
+            PyObject *apps_list = PyList_New(msg->n_apps);
+            for (unsigned int i = 0; i < msg->n_apps; i++) {
+                PyList_SetItem(apps_list, i, PyLong_FromUnsignedLong(msg->apps[i]));
+            }
+            PyDict_SetItemString(dict, "apps", apps_list);
+        }
+
+        PyList_Append(result_list, dict);
         device_apps__free_unpacked(msg, NULL);
         free(buf);
     }
 
-    // Clean up
     gzclose(gzfile);
     fclose(file);
 
-    Py_RETURN_NONE;
+    return result_list;
 }
 
 
